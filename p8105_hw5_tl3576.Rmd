@@ -1,0 +1,63 @@
+---
+title: "Homework 5"
+output: github_document
+---
+
+```{r setup, include = FALSE}
+library(tidyverse)
+
+knitr::opts_chunk$set(
+  fig.width = 8,
+  fig.asp = 0.6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## Problem 2
+
+```{r}
+study_df =
+  tibble(
+    file_name = list.files(path = "data", full.names = TRUE)
+  ) |>
+  mutate(
+    data = map(file_name, read_csv, show_col_types = FALSE),
+    base_name = tools::file_path_sans_ext(basename(file_name))
+  ) |>
+  separate(
+    base_name,
+    into = c("arm", "subject_id")
+  ) |>
+  unnest(data) |>
+  pivot_longer(
+    week_1:week_8,
+    names_to = "week",
+    names_prefix = "week_",
+    values_to = "observation"
+  ) |>
+  mutate(
+    week = as.numeric(week),
+    subject_id = str_c(arm, "_", subject_id),
+    arm = recode(arm, "con" = "Control", "exp" = "Experimental")
+  ) |>
+  select(subject_id, arm, week, observation)
+```
+
+```{r}
+study_df |>
+  ggplot(aes(x = week, y = observation, group = subject_id, color = arm)) +
+  geom_line(alpha = 0.7) +
+  labs(
+    x = "Week",
+    y = "Observation",
+    color = "Study Arm",
+    title = "Observations Over Time for Each Subject"
+  )
+```
+
+Both study arms have similar means around week 1 (about `r round(mean(study_df$observation[study_df$arm == "Control" & study_df$week == 1]), 1)` in the control arm and `r round(mean(study_df$observation[study_df$arm == "Experimental" & study_df$week == 1]), 1)` in the experimental arm). The control group stays flat with no clear trend over the 8 weeks, ending at about `r round(mean(study_df$observation[study_df$arm == "Control" & study_df$week == 8]), 1)`. The experimental group rises steadily, reaching a mean of about `r round(mean(study_df$observation[study_df$arm == "Experimental" & study_df$week == 8]), 1)` by week 8. By the end of the study, the two groups are clearly separated, suggesting the treatment effect grows over time.
