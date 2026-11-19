@@ -48,6 +48,8 @@ study_df =
   select(subject_id, arm, week, observation)
 ```
 
+### Spaghetti Plot
+
 ```{r}
 study_df |>
   ggplot(aes(x = week, y = observation, group = subject_id, color = arm)) +
@@ -61,3 +63,81 @@ study_df |>
 ```
 
 Both study arms have similar means around week 1 (about `r round(mean(study_df$observation[study_df$arm == "Control" & study_df$week == 1]), 1)` in the control arm and `r round(mean(study_df$observation[study_df$arm == "Experimental" & study_df$week == 1]), 1)` in the experimental arm). The control group stays flat with no clear trend over the 8 weeks, ending at about `r round(mean(study_df$observation[study_df$arm == "Control" & study_df$week == 8]), 1)`. The experimental group rises steadily, reaching a mean of about `r round(mean(study_df$observation[study_df$arm == "Experimental" & study_df$week == 8]), 1)` by week 8. By the end of the study, the two groups are clearly separated, suggesting the treatment effect grows over time.
+
+## Problem 3
+
+```{r}
+sim_t_test = function(mu, n = 30, sigma = 5) {
+  x = rnorm(n, mean = mu, sd = sigma)
+  t.test(x, mu = 0) |>
+    broom::tidy() |>
+    select(estimate, p.value)
+}
+```
+
+```{r}
+power_results_df =
+  expand_grid(
+    mu = 0:6,
+    iter = 1:5000
+  ) |>
+  mutate(
+    result = map(mu, sim_t_test)
+  ) |>
+  unnest(result) |>
+  mutate(reject = p.value < 0.05)
+```
+
+### Power Plot
+
+```{r}
+power_summary_df =
+  power_results_df |>
+  group_by(mu) |>
+  summarize(
+    power = mean(reject),
+    avg_estimate = mean(estimate),
+    avg_estimate_rejected = mean(estimate[reject])
+  )
+```
+
+```{r}
+power_summary_df |>
+  ggplot(aes(x = mu, y = power)) +
+  geom_point() +
+  geom_line() +
+  scale_x_continuous(breaks = 0:6) +
+  labs(x = "True value of mu", y = "Power (proportion of nulls rejected)")
+```
+
+Power increases as the true value of μ gets larger. When the null is true (μ = 0), the null was rejected in `r round(mean(power_results_df$reject[power_results_df$mu == 0]), 3)` of simulations, which is close to the 0.05 significance level. Power rises to `r round(mean(power_results_df$reject[power_results_df$mu == 1]), 2)` at μ = 1, `r round(mean(power_results_df$reject[power_results_df$mu == 2]), 2)` at μ = 2, and `r round(mean(power_results_df$reject[power_results_df$mu == 3]), 2)` at μ = 3, and is essentially `r round(mean(power_results_df$reject[power_results_df$mu == 5]), 2)` by μ = 5. Larger effects are further from the null relative to the standard error, so the test is more likely to reject. The association is positive and S-shaped, leveling off near 1.
+
+### Estimate Plot
+
+```{r}
+power_summary_df |>
+  pivot_longer(
+    avg_estimate:avg_estimate_rejected,
+    names_to = "sample",
+    values_to = "average_estimate"
+  ) |>
+  mutate(
+    sample = recode(
+      sample,
+      avg_estimate = "All samples",
+      avg_estimate_rejected = "Only samples where null rejected"
+    )
+  ) |>
+  ggplot(aes(x = mu, y = average_estimate, color = sample)) +
+  geom_point() +
+  geom_line() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  scale_x_continuous(breaks = 0:6) +
+  labs(
+    x = "True value of mu",
+    y = "Average estimate of mu-hat",
+    color = NULL
+  )
+```
+
+Across all simulated samples, the average estimate is very close to the true value (e.g., `r round(mean(power_results_df$estimate[power_results_df$mu == 2]), 2)` when μ = 2) because the sample mean is an unbiased estimator. Among only the samples where the null was rejected, the average estimate is `r round(mean(power_results_df$estimate[power_results_df$mu == 2 & power_results_df$reject]), 2)` when μ = 2, and `r round(mean(power_results_df$estimate[power_results_df$mu == 1 & power_results_df$reject]), 2)` when μ = 1 which is larger than the true value. So the average of μ̂ among rejected tests is not approximately equal to μ when power is low. This happens because rejecting the null selects the samples whose estimates happened to be far from 0, which inflates the average. When power is high, almost all samples are rejected, so little is filtered out, and the two averages agree. At μ = 5, the rejected-sample average is `r round(mean(power_results_df$estimate[power_results_df$mu == 5 & power_results_df$reject]), 2)`.
